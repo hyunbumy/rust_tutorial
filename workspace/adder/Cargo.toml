@@ -1,0 +1,11 @@
+[package]
+name = "adder"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# Cargo doesn't assume that crates in a workspace will depend on each other.
+add_one = { path = "../add_one" }
+rand = "0.8.0"

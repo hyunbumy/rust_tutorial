@@ -29,5 +29,5 @@ fn main() {
       Cons(i32, Box<List>),
       Nil,
     }
-    let list: List = List::Cons(1, Box::new(List::Cons(2, Box::new(List::Cons(3, Box::new(List::Nil))))));
+    let _list: List = List::Cons(1, Box::new(List::Cons(2, Box::new(List::Cons(3, Box::new(List::Nil))))));
 }

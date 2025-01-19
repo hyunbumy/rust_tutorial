@@ -87,4 +87,27 @@ fn main() {
     // * From &mut T to &U when T: Deref<Target=U>
     // Rust will coerce a mutable ref to immutable, but not the other way
     // around.
+
+    // `Drop` lets you customize the "deconstructor".
+    struct CustomSmartPointer {
+        data: String,
+    }
+    impl Drop for CustomSmartPointer {
+        fn drop(&mut self) {
+            println!("Dropping with data `{}`", self.data);
+        }
+    }
+    {
+        let _c = CustomSmartPointer {
+            data: String::from("my stuff"),
+        };
+    }
+    // Rust doesn't let you call `Drop.drop` manually. Instead, you have to call
+    // `std::mem::drop` function to force a value to be dropped before end of
+    // its scope.
+    let c = CustomSmartPointer {
+        data: String::from("my stuff"),
+    };
+    drop(c);
+    println!("dropped before end of main");
 }

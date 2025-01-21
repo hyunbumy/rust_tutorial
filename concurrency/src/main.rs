@@ -101,4 +101,24 @@ fn main() {
         handle.join().unwrap();
     }
     println!("Result is {}", *counter.lock().unwrap());
+
+    // `Sync` and `Send` traits
+
+    // Send marker trait indicates that ownership of values of the type
+    // implementing `Send` can be _transferred_ between threads.
+
+    // `Sync` marker trait indicates that it is safe for the type to be
+    // _referenced_ from multiple threads.
+    // Similar to "thread-safety"
+
+    /*
+    * The smart pointer Rc<T> is also neither Send nor Sync since it's designed for single-thread use.
+    * The RefCell<T> type (which we talked about in Chapter 15) and the family of related Cell<T> types are Send (if T: Send), but they are not Sync. A RefCell can be sent across a thread boundary, but not accessed concurrently because the implementation of borrow checking that RefCell<T> does at runtime is not thread-safe.
+    * The smart pointer Mutex<T> is Send and Sync, and can be used to share access with multiple threads as you saw in the “Sharing a Mutex<T> Between Multiple Threads” section.
+    * The type MutexGuard<'a, T> that is returned by Mutex::lock is Sync (if T: Sync) but not Send. It is specifically not Send because some platforms mandate that mutexes are unlocked by the same thread that locked them.
+    */
+
+    // Implementing `Send` and `Sync` manually is unsafe.
+    // As marker traits, they do not have any methods to implement.
+
 }

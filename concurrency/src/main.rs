@@ -72,4 +72,33 @@ fn main() {
     }
 
     handle.join().unwrap();
+
+    // Shared-state concurrency: multipe threads accessing same shared data.
+    use std::sync::{Arc, Mutex};
+
+    let m: Mutex<i32> = Mutex::new(5);
+    {
+        // Try to acquire lock from Mutex; this will block
+        let mut num: std::sync::MutexGuard<'_, i32> = m.lock().unwrap();
+        *num = 6;
+    } // Lock is released automatically as `num` / MutexGuard goes out of scope.
+    println!("m = {m:?}");
+
+    // Multiple ownership of shared data.
+    // Use Arc<> instead of Rc<>, Arc = atomic Rc to ensure thread-safety.
+    // Mutext provides interior mutability: we can get mutable ref from the immutable instance
+    let counter: Arc<Mutex<i32>> = Arc::new(Mutex::new(0));
+    let mut handles = vec![];
+    for _ in 0..10 {
+        let counter = Arc::clone(&counter);
+        let handle = thread::spawn(move || {
+            let mut num = counter.lock().unwrap();
+            *num += 1;
+        });
+        handles.push(handle);
+    }
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    println!("Result is {}", *counter.lock().unwrap());
 }

@@ -35,6 +35,7 @@ fn main() {
     use std::sync::mpsc;
 
     // Create a new channel with sender and receiver
+    // Single channel can only send and recv a single type.
     let (tx, rx) = mpsc::channel();
     // Create a new sender by cloning
     let tx2: mpsc::Sender<String> = tx.clone();

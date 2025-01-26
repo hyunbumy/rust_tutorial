@@ -1,3 +1,9 @@
+use std::thread;
+use std::{
+    future::Future,
+    pin::{pin, Pin},
+    time::Duration,
+};
 use trpl::{Either, Html};
 
 // Mark page_title as an async function.
@@ -58,21 +64,89 @@ fn main() {
         let title_fut_2 = page_title(&args[2]);
 
         // Take the first returning Future's values
-        let (url, maybe_title) =
-            match trpl::race(title_fut_1, title_fut_2).await {
-                Either::Left(left) => left,
-                Either::Right(right) => right,
-            };
-        
+        let (url, maybe_title) = match trpl::race(title_fut_1, title_fut_2).await {
+            Either::Left(left) => left,
+            Either::Right(right) => right,
+        };
+
         println!("{url} returned first");
 
         match maybe_title {
             Some(title) => println!("The title for {url} was {title}"),
             None => println!("{url} had no title"),
         }
-    })
-    
-    // Async performs multiple tasks WITHIN THE SAME THREAD by context switching
-    // blocked tasks (concurrency).
-    // Threading creates new threads that could be picked up by other CPUs (parallelism).
+    });
+
+    // Async performs multiple tasks USING THE SAME THREAD by context switching
+    // blocked tasks (cooperative)
+    //   - concurrency only
+    //   - no inherint parallelism
+    // Threading creates new threads (in kernel-space) that could be picked up by other CPUs
+    //   - Pre-emptive concurrency within the same CPU
+    //   - Parallelism across CPUs
+    // Fibers are executed by user-space threads
+    //   - Cooperative concurrency within the same CPU
+    //   - Parallelism across CPUs
+    // Cooperative concurrency shines most when the workload is mostly blocking (ie. IO)
+
+    trpl::run(async {
+        // Handling multiple futures dynamically
+        // Use `pin` to get dynamic type inference without having to use Box
+        // which does heap allocation.
+        let fut1 = pin!(async move {
+            println!("hello");
+            trpl::sleep(Duration::from_secs(1)).await;
+        });
+        let fut2 = pin!(async move {
+            println!("world");
+            trpl::sleep(Duration::from_secs(1)).await;
+        });
+        let futures: Vec<Pin<&mut dyn Future<Output = ()>>> = vec![fut1, fut2];
+        trpl::join_all(futures).await;
+
+        // Handling mutliple futures of different return types but statically
+        let a = async { 1u32 };
+        let b = async { "hello" };
+        let c = async { true };
+        let (a_result, b_result, c_result) = trpl::join!(a, b, c);
+        println!("{a_result}, {b_result}, {c_result}");
+
+        // Racing futures to only require some futures to finish.
+        // trpl::race used `select` under the hood.
+        let slow = async {
+            println!("'slow' started.");
+            trpl::sleep(Duration::from_millis(100)).await;
+            println!("'slow' finished.");
+        };
+        let fast = async {
+            println!("'fast' started.");
+            trpl::sleep(Duration::from_millis(50)).await;
+            println!("'fast' finished.");
+        };
+        // Order matters here since the implementation executes in order.
+        // Other impls are fair in that they may get chosen randomly.
+        trpl::race(slow, fast).await;
+
+        // Yielding cooperatively for non-Futures-aware code to run interleaved.
+        fn slow_fn(name: &str, ms: u64) {
+            thread::sleep(Duration::from_millis(ms));
+            println!("'{name}' ran for {ms}ms");
+        }
+
+        let a = async {
+            // Expensive sleep that won't context switch automatically
+            slow_fn("a", 30);
+            // Yield to make progress with other task
+            trpl::yield_now().await;
+            slow_fn("a", 50);
+        };
+        let b = async {
+            // Expensive sleep that won't context switch automatically
+            slow_fn("b", 75);
+            // Yield to make progress with other task
+            trpl::yield_now().await;
+            slow_fn("b", 10);
+        };
+        trpl::race(a, b).await;
+    });
 }

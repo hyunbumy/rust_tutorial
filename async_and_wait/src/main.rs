@@ -71,4 +71,8 @@ fn main() {
             None => println!("{url} had no title"),
         }
     })
+    
+    // Async performs multiple tasks WITHIN THE SAME THREAD by context switching
+    // blocked tasks (concurrency).
+    // Threading creates new threads that could be picked up by other CPUs (parallelism).
 }

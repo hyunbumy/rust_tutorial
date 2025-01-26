@@ -77,8 +77,21 @@ fn main() {
         }
     });
 
-    // Async performs multiple tasks USING THE SAME THREAD by context switching
-    // blocked tasks (cooperative)
+    // In Rust, the concurrency model is as follows:
+    // Futures -> Tasks -> Threads
+    // Threads refer to OS-level threads where only 1 can run per CPU core.
+    // Tasks can be run in multiple different threads (single- or multi-threaded)
+    // Tasks manage multiple Futures
+    // Futures can have mutliple Futures
+    //
+    // A computer may have multiple CPU cores.
+    // A CPU core runs a single OS thread at a time from multiple threads.
+    // A single thread runs a single task at a time from multiple tasks.
+    // A task runs a single future at a time from multiple futures.
+    // At each level, we can context switch.
+    //
+    // Async / futures performs multiple actions USING THE SAME THREAD by context
+    // switching blocked actions (cooperative)
     //   - concurrency only
     //   - no inherint parallelism
     // Threading creates new threads (in kernel-space) that could be picked up by other CPUs
@@ -148,5 +161,65 @@ fn main() {
             slow_fn("b", 10);
         };
         trpl::race(a, b).await;
+
+        // Using Streams to receive a stream of data asynchronously.
+        use trpl::StreamExt;
+        let values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let iter = values.iter().map(|n| n * 2);
+        let stream = trpl::stream_from_iter(iter);
+        let mut filtered = stream.filter(|val| val % 3 == 0 || val % 5 == 0);
+        while let Some(value) = filtered.next().await {
+            println!("The value was : {value}");
+        }
+
+        use trpl::{ReceiverStream, Stream};
+
+        fn get_messages() -> impl Stream<Item = String> {
+            let (tx, rx) = trpl::channel();
+            // Spawn a task to run message sending and sleeping async.
+            // This may be or may not be running in a separate thread.
+            trpl::spawn_task(async move {
+                let messages = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
+                for (index, message) in messages.iter().enumerate() {
+                    let time_to_sleep = if index % 2 == 0 { 100 } else { 300 };
+                    trpl::sleep(Duration::from_millis(time_to_sleep)).await;
+                    tx.send(format!("Message: '{message}'")).unwrap();
+                }
+            });
+            ReceiverStream::new(rx)
+        }
+
+        // Inifinite loop until runtime gets torn down.
+        fn get_intervals() -> impl Stream<Item = u32> {
+            let (tx, rx) = trpl::channel();
+
+            trpl::spawn_task(async move {
+                let mut count = 0;
+                loop {
+                    trpl::sleep(Duration::from_millis(1)).await;
+                    count += 1;
+                    tx.send(count).unwrap();
+                }
+            });
+
+            ReceiverStream::new(rx)
+        }
+
+        // Merging streams
+        let messages = get_messages().timeout(Duration::from_millis(200));
+        let intervals = get_intervals()
+            .map(|count| format!("interval: {count}"))
+            // Throttle polls at the throttled rate, only consuming values then.
+            .throttle(Duration::from_millis(100))
+            .timeout(Duration::from_secs(10));
+        // Limit the number of consumed values
+        let merged = messages.merge(intervals).take(20);
+        let mut stream = pin!(merged);
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(message) => println!("{message}"),
+                Err(reason) => eprintln!("problem: {reason:?}"),
+            }
+        }
     });
 }

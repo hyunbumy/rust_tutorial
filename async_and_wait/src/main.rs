@@ -221,5 +221,17 @@ fn main() {
                 Err(reason) => eprintln!("problem: {reason:?}"),
             }
         }
+
+        // Pinning
+        // Pin only works with other pointer types or smart pointers.
+        // when moving a future, it means moving the state machine which has a reference
+        // to itself, which means we have to update any references to it.
+        //
+        // When we PIN a value, we tell Rust that the underlying value can no longer move.
+        // `Pin<Box<SomeType>>` means `SomeType` cannot be moved, though the ref
+        // itself can move freely.
+        // But most types sare safe to move around as long as there are no internal references.
+        // So `Unpin` marks that a type is safe to be moved. It's marked automatically,
+        // and should not be manually implemented.
     });
 }

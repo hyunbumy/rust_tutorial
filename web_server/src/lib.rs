@@ -1,14 +1,12 @@
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::sync::Mutex;
+use crossbeam_channel;
 use std::thread;
 
 // Must use Box<dyn ...> to accept any closures
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
 pub struct ThreadPool {
-    workers: Vec<thread::JoinHandle<()>>,
-    sender: mpsc::Sender<Job>,
+    workers: Vec<Option<thread::JoinHandle<()>>>,
+    sender: crossbeam_channel::Sender<Job>,
 }
 
 impl ThreadPool {
@@ -16,23 +14,24 @@ impl ThreadPool {
         assert!(size > 0);
 
         // Make blocking channel receive with specified number of threads.
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = crossbeam_channel::bounded(1);
         // Create a ref-counting pointers to the _same_ receiver.
         // We need to guard it with a mutex for thread-safety.
-        let receiver = Arc::new(Mutex::new(rx));
+        // let receiver = Arc::new(Mutex::new(rx));
 
+        // Alternatively, use a mpmc so that the rx can be cloned.
         let mut workers = Vec::with_capacity(size);
         for ind in 0..size {
-            let receiver = Arc::clone(&receiver);
+            let receiver = rx.clone();
             // We can't use `while let` since the Mutex unlocks as it goes out of scope,
             // but with `while let` the RHS does not go out of scope until the end of the block.
             // OTOH, with `let` the RHS goes out of scope at the end of its statement.
-            workers.push(thread::spawn(move || loop {
-                let job: Job = receiver.lock().unwrap().recv().unwrap();
+            workers.push(Option::Some(thread::spawn(move || loop {
+                let job: Job = receiver.recv().unwrap();
                 println!("Got a job from {ind}");
 
                 job();
-            }));
+            })));
         }
 
         ThreadPool {
@@ -45,10 +44,21 @@ impl ThreadPool {
     where
         // We need `Send` to transfer closure from one thread to another
         // We need `'static` since we don't know how long the thread will take to execute.
-        F: FnOnce() + Send +'static,
+        F: FnOnce() + Send + 'static,
     {
         // Send func as fast as we can
         let job = Box::new(func);
         self.sender.send(job).unwrap();
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        println!("Shutting down workers");
+        for worker in &mut self.workers {
+          if let Some(handle) = worker.take() {
+            handle.join().unwrap();
+          }
+        }
     }
 }

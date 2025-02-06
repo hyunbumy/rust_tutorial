@@ -5,8 +5,9 @@ use std::thread;
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
 pub struct ThreadPool {
+    // Need optionals here since we need to explicitly take ownership of these during drop
     workers: Vec<Option<thread::JoinHandle<()>>>,
-    sender: crossbeam_channel::Sender<Job>,
+    sender: Option<crossbeam_channel::Sender<Job>>,
 }
 
 impl ThreadPool {
@@ -22,21 +23,29 @@ impl ThreadPool {
         // Alternatively, use a mpmc so that the rx can be cloned.
         let mut workers = Vec::with_capacity(size);
         for ind in 0..size {
-            let receiver = rx.clone();
+            let receiver: crossbeam_channel::Receiver<Job> = rx.clone();
             // We can't use `while let` since the Mutex unlocks as it goes out of scope,
             // but with `while let` the RHS does not go out of scope until the end of the block.
             // OTOH, with `let` the RHS goes out of scope at the end of its statement.
             workers.push(Option::Some(thread::spawn(move || loop {
-                let job: Job = receiver.recv().unwrap();
-                println!("Got a job from {ind}");
+                let msg = receiver.recv();
 
-                job();
+                match msg {
+                    Ok(job) => {
+                        println!("Got a job by thread: {ind}");
+                        job();
+                    }
+                    Err(_) => {
+                        println!("Thread {ind} disconnected; shutting down.");
+                        break;
+                    }
+                }
             })));
         }
 
         ThreadPool {
             workers,
-            sender: tx,
+            sender: Some(tx),
         }
     }
 
@@ -48,15 +57,20 @@ impl ThreadPool {
     {
         // Send func as fast as we can
         let job = Box::new(func);
-        self.sender.send(job).unwrap();
+        self.sender.as_ref().unwrap().send(job).unwrap();
     }
 }
 
 impl Drop for ThreadPool {
     fn drop(&mut self) {
+        // Dropping the Sender explicitly to let the channel know it's done sending data.
+        drop(self.sender.take());
+
         println!("Shutting down workers");
         for worker in &mut self.workers {
           if let Some(handle) = worker.take() {
+            // Need to cancel the threads before joining.
+            // Otherwise, threads won't be able to be cancelled properly.
             handle.join().unwrap();
           }
         }
